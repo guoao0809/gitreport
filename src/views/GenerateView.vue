@@ -526,9 +526,14 @@ function buildUserTextFromReports(records: { type: ReportType; dateRange: string
                 </template>
                 <template v-else>
                   <span
-                    class="max-w-40 truncate text-sm text-title"
-                    :title="p.alias ? `仓库名：${p.name}` : '设置项目别称'"
-                  >{{ displayName(p.id) }}</span>
+                    class="min-w-0 max-w-40 truncate text-sm text-title"
+                    :title="p.alias?.trim() ? `别称：${p.alias}` : '设置项目别称'"
+                  >{{ p.name }}</span>
+                  <span
+                    v-if="p.alias?.trim()"
+                    class="shrink-0 rounded bg-primary/10 px-1 py-0.5 text-xs text-primary"
+                    :title="`别称：${p.alias}`"
+                  >{{ p.alias }}</span>
                   <button
                     class="shrink-0 rounded p-0.5 text-muted hover:bg-surface hover:text-primary"
                     title="编辑项目别称"

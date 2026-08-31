@@ -272,11 +272,20 @@ onBeforeUnmount(() => {
   unlistenFocus?.();
 });
 
+// ===== 移除项目二次确认弹窗 =====
+/** 非空 = 待确认移除的项目 */
+const pendingRemove = ref<Project | null>(null);
+
 function removeProject(id: string) {
-  const p = projects.value.find((x) => x.id === id);
-  if (window.confirm(`确定移除项目「${p?.alias?.trim() || p?.name || id}」吗？`)) {
-    projectStore.removeProject(id);
-    selected.value.delete(id);
+  pendingRemove.value = projects.value.find((x) => x.id === id) ?? null;
+}
+
+function confirmRemove(go: boolean) {
+  const p = pendingRemove.value;
+  pendingRemove.value = null;
+  if (go && p) {
+    projectStore.removeProject(p.id);
+    selected.value.delete(p.id);
     showToast("已移除项目", "success");
   }
 }
@@ -836,6 +845,37 @@ function buildUserTextFromReports(records: { type: ReportType; dateRange: string
         <Sparkles :size="15" />
         {{ generating ? stage : "生成" }}
       </button>
+    </div>
+
+    <!-- 移除项目确认弹窗 -->
+    <div
+      v-if="pendingRemove"
+      class="fixed inset-0 z-40 flex items-center justify-center bg-black/40"
+      @click.self="confirmRemove(false)"
+    >
+      <div class="w-96 rounded-xl bg-panel shadow-2xl">
+        <div class="border-b border-border px-5 py-3.5 text-sm font-medium text-title">
+          移除项目
+        </div>
+        <div class="px-5 py-4 text-sm text-text">
+          确定移除「{{ pendingRemove.alias?.trim() || pendingRemove.name }}」吗？
+          <div class="mt-1 text-xs text-muted">仅从列表移除，不影响本地仓库</div>
+        </div>
+        <div class="flex justify-end gap-2 border-t border-border px-5 py-3">
+          <button
+            class="rounded-lg border border-border px-4 py-1.5 text-sm text-text hover:border-primary hover:text-primary"
+            @click="confirmRemove(false)"
+          >
+            取消
+          </button>
+          <button
+            class="rounded-lg bg-red-500 px-4 py-1.5 text-sm text-white hover:opacity-90"
+            @click="confirmRemove(true)"
+          >
+            移除
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- 未提交文件确认弹窗 -->

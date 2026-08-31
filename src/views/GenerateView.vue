@@ -265,6 +265,7 @@ const result = ref("");
 const mode = ref<"preview" | "edit">("preview");
 const generating = ref(false);
 const stage = ref("");
+const lastUsage = ref<{ prompt: number; completion: number; total: number } | null>(null);
 
 const md = new MarkdownIt({ breaks: true, linkify: true });
 const renderedHtml = computed(() =>
@@ -302,6 +303,27 @@ function buildUserText(groups: ProjectCommits[], dateRange: string): string {
 function renderTemplate(tpl: string, vars: Record<string, string>): string {
   return tpl.replace(/\{\{\w+\}\}/g, (m) => vars[m] ?? m);
 }
+
+/** 月报「按日报/周报」模式：无需勾选项目，从历史报告拼装 */
+const useReportsMode = computed(
+  () => reportType.value === "monthly" && monthlyMode.value === "reports",
+);
+
+/** 生成按钮可用性：普通模式需有勾选项目且预览到提交；reports 模式需日期范围内有历史报告 */
+const canGenerate = computed(() => {
+  if (generating.value) return false;
+  if (useReportsMode.value) {
+    return reportStore.reports.some(
+      (r) =>
+        (r.type === "daily" || r.type === "weekly") &&
+        r.from >= from.value &&
+        r.from <= to.value,
+    );
+  }
+  const chosen = projects.value.filter((p) => selected.value.has(p.id));
+  if (chosen.length === 0) return false;
+  return projectPreviews.value.length > 0;
+});
 
 async function generate() {
   if (generating.value) return;
@@ -377,9 +399,10 @@ async function generate() {
 
     stage.value = "正在生成…";
     result.value = "";
+    lastUsage.value = null;
     mode.value = "preview";
-    // 流式：每收到增量就追加显示，返回完整文本用于存档
-    const content = await generateReportStream(
+    // 流式：每收到增量就追加显示，返回完整文本与 token 用量
+    const { content, usage } = await generateReportStream(
       { config: ai, system, user },
       (delta) => {
         result.value += delta;
@@ -387,6 +410,9 @@ async function generate() {
     );
     result.value = content;
     mode.value = "preview";
+    if (usage && usage.totalTokens > 0) {
+      lastUsage.value = { prompt: usage.promptTokens, completion: usage.completionTokens, total: usage.totalTokens };
+    }
 
     reportStore.addReport({
       id: `r-${Date.now()}`,
@@ -651,6 +677,10 @@ function buildUserTextFromReports(records: { type: ReportType; dateRange: string
         </div>
 
         <div class="min-h-0 flex-1 overflow-y-auto p-4">
+          <div
+            v-if="lastUsage"
+            class="mb-2 text-xs text-muted"
+          >本次消耗：{{ lastUsage.total }} token（输入 {{ lastUsage.prompt }} / 输出 {{ lastUsage.completion }}）</div>
           <template v-if="result">
             <div v-if="mode === 'preview'" class="markdown-body" v-html="renderedHtml"></div>
             <textarea
@@ -688,7 +718,7 @@ function buildUserTextFromReports(records: { type: ReportType; dateRange: string
     <div class="flex shrink-0 items-center justify-center">
       <button
         class="flex items-center gap-2 rounded-lg bg-primary px-8 py-2 text-sm text-white shadow hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-        :disabled="generating"
+        :disabled="!canGenerate"
         @click="generate"
       >
         <Sparkles :size="15" />

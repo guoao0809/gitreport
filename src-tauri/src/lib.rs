@@ -29,6 +29,7 @@ pub fn run() {
             ai::generate_report,
             ai::generate_report_stream,
             ai::test_ai_connection,
+            ai::fetch_models,
             secrets::save_api_key,
             secrets::load_api_key,
             secrets::delete_api_key

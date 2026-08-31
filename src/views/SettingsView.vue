@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, watch } from "vue";
-import { Eye, EyeOff, Plus, Trash2, RotateCcw, Bot, UserRound, FileCode2, Download } from "lucide-vue-next";
+import { Eye, EyeOff, Plus, Trash2, RotateCcw, Bot, UserRound, FileCode2, Download, RefreshCw, ChevronDown } from "lucide-vue-next";
 import type { AIConfig, AIProtocol, ReportType } from "../types";
 import { TEMPLATE_VARS } from "../types";
-import { testAiConnection, getGitIdentity } from "../api";
+import { testAiConnection, getGitIdentity, listModels } from "../api";
 import { useSettingStore } from "../stores/settings";
 import { useProjectStore } from "../stores/projects";
 import { showToast } from "../components/toast";
 import Tabs from "../components/Tabs.vue";
+import { ComboboxRoot, ComboboxAnchor, ComboboxInput, ComboboxTrigger, ComboboxPortal, ComboboxContent, ComboboxViewport, ComboboxItem, ComboboxEmpty } from "reka-ui";
 
 const settingStore = useSettingStore();
 const projectStore = useProjectStore();
@@ -39,6 +40,32 @@ watch(
 const showKey = ref(false);
 const testing = ref(false);
 const testResult = ref<{ ok: boolean; elapsed: string } | null>(null);
+
+// 获取模型列表
+const models = ref<string[]>([]);
+const listLoading = ref(false);
+const modelOpen = ref(false);
+/** reka-ui 内建过滤：模型名包含输入关键字 */
+function modelFilter(value: string, search: string) {
+  return value.toLowerCase().includes(search.toLowerCase());
+}
+async function fetchModels() {
+  if (!form.baseUrl || !form.apiKey) {
+    showToast("请先填写 Base URL 和 API Key", "error");
+    return;
+  }
+  listLoading.value = true;
+  try {
+    const list = await listModels({ ...form });
+    models.value = list;
+    showToast(`获取到 ${list.length} 个模型`, "success");
+  } catch (e) {
+    models.value = [];
+    showToast(`获取模型失败：${e}`, "error");
+  } finally {
+    listLoading.value = false;
+  }
+}
 
 function pickProtocol(p: AIProtocol) {
   form.protocol = p;
@@ -259,12 +286,60 @@ function saveTemplate() {
 
         <div class="mb-4">
           <label class="mb-1.5 block text-sm text-text">模型名称</label>
-          <input
-            v-model="form.model"
-            type="text"
-            placeholder="gpt-4o-mini / claude-sonnet-4-5 等"
-            class="w-full rounded-lg border border-border px-3 py-2 text-sm text-title outline-none focus:border-primary"
-          />
+          <div class="flex gap-2">
+            <ComboboxRoot
+              v-model="form.model"
+              :filter-function="modelFilter"
+              :open="modelOpen"
+              @update:open="(v) => (modelOpen = v)"
+              class="min-w-0 flex-1"
+            >
+              <ComboboxAnchor
+                class="flex min-w-0 flex-1 cursor-pointer items-center gap-1 rounded-lg border border-border px-3 py-2 focus-within:border-primary"
+              >
+                <ComboboxInput
+                  class="min-w-0 flex-1 bg-transparent text-sm text-title outline-none placeholder:text-muted"
+                  placeholder="gpt-4o-mini / claude-sonnet-4-5 等"
+                  @focus="modelOpen = true"
+                  @click="modelOpen = true"
+                />
+                <ComboboxTrigger v-if="models.length > 0" class="text-muted">
+                  <ChevronDown :size="14" />
+                </ComboboxTrigger>
+              </ComboboxAnchor>
+              <ComboboxPortal>
+                <ComboboxContent
+                  position="popper"
+                  align="start"
+                  side="bottom"
+                  :side-offset="6"
+                  class="model-picker-popup z-30 max-h-72 overflow-y-auto rounded-lg border border-border bg-panel shadow-lg"
+                >
+                  <ComboboxViewport class="p-1">
+                    <ComboboxItem
+                      v-for="m in models"
+                      :key="m"
+                      :value="m"
+                      class="cursor-pointer rounded-md px-3 py-2 text-left text-sm text-text outline-none data-highlighted:bg-surface data-highlighted:text-title data-state-checked:text-primary"
+                    >
+                      {{ m }}
+                    </ComboboxItem>
+                    <ComboboxEmpty class="px-3 py-2 text-sm text-muted">
+                      暂无模型，先点「获取模型」
+                    </ComboboxEmpty>
+                  </ComboboxViewport>
+                </ComboboxContent>
+              </ComboboxPortal>
+            </ComboboxRoot>
+            <button
+              class="flex shrink-0 items-center gap-1 rounded-lg border border-border px-3 py-2 text-sm text-text hover:border-primary hover:text-primary disabled:opacity-50"
+              :disabled="listLoading"
+              @click="fetchModels"
+            >
+              <RefreshCw :size="14" :class="listLoading ? 'animate-spin' : ''" />
+              {{ listLoading ? "获取中…" : "获取模型" }}
+            </button>
+          </div>
         </div>
 
         <div class="mb-4">
@@ -451,3 +526,10 @@ function saveTemplate() {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* 模型下拉弹层与输入框等宽：reka-ui 在 content 上暴露 --reka-popper-anchor-width */
+.model-picker-popup {
+  min-width: var(--reka-popper-anchor-width);
+}
+</style>

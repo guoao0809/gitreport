@@ -29,7 +29,9 @@
 
 ### 🤖 AI 生成（OpenAI / Anthropic 双协议）
 - 同时支持 **OpenAI 兼容**（任何 OpenAI 格式的网关/中转）与 **Anthropic** 协议，Base URL 智能拼接 `/v1`。
+- **模型列表**：Base URL / API Key 就绪后一键「**获取模型**」，从接口拉取可用模型下拉选择（OpenAI `/models` 与 Anthropic `/v1/models` 自适应）。
 - **流式输出**：边生成边显示，全程实时可见；内容以 Markdown 渲染，可切换「预览 / 编辑」离线改稿，一键复制全文。
+- **token 用量**：生成结束后展示本次消耗 token 数（输入 / 输出），OpenAI 与 Anthropic 双端兼容。
 
 ### 🧩 提示词模板可定制
 - 日报 / 周报 / 月报各有一套可编辑的提示词模板，内置变量插入：
@@ -121,7 +123,7 @@ pnpm tauri build
 
 ## 快速使用
 
-1. **设置 → AI 模型**：填写接口协议、Base URL、模型名与 API Key，点「测试连接」确认可用。
+1. **设置 → AI 模型**：填写接口协议、Base URL、模型名与 API Key，点「测试连接」确认可用；或点「**获取模型**」从接口拉取列表直接选择。
    - OpenAI 兼容示例：`https://api.openai.com/v1`、`gpt-4o-mini`
    - Anthropic 示例：`https://api.anthropic.com/v1`、`claude-sonnet-4-5`
 2. **生成页**：点击「导入项目」选择工作目录，勾选仓库（可切换分支）。

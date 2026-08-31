@@ -59,22 +59,38 @@ export async function generateReport(payload: GeneratePayload): Promise<string> 
   return invoke<string>("generate_report", { payload });
 }
 
+export interface ReportUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
+export interface StreamResult {
+  content: string;
+  usage?: ReportUsage | null;
+}
+
 /**
  * 流式调 AI 生成日报。
- * onDelta 每收到一段增量文本即调用；返回完整文本（用于存档）。
+ * onDelta 每收到一段增量文本即调用；返回 { content, usage }（usage 含 token 用量，可能为空）。
  */
 export async function generateReportStream(
   payload: GeneratePayload,
   onDelta: (delta: string) => void,
-): Promise<string> {
+): Promise<StreamResult> {
   const channel = new Channel<string>();
   channel.onmessage = (delta) => onDelta(delta);
-  return invoke<string>("generate_report_stream", { payload, channel });
+  return invoke<StreamResult>("generate_report_stream", { payload, channel });
 }
 
 /** 最小请求验证 AI 配置，返回耗时描述（如 "0.8s"），失败抛错 */
 export async function testAiConnection(config: AIConfig): Promise<string> {
   return invoke<string>("test_ai_connection", { config });
+}
+
+/** 拉取接口的模型列表（model id 数组），用于设置页下拉填充 */
+export async function listModels(config: AIConfig): Promise<string[]> {
+  return invoke<string[]>("fetch_models", { config });
 }
 
 // ===== API key 安全存储（系统钥匙串）=====

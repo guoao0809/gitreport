@@ -65,6 +65,11 @@ export interface DetectResult {
   lastCommitAt: number | null;
 }
 
+export interface DirtyCount {
+  path: string;
+  dirty: number; // 未提交文件数（含 untracked）
+}
+
 // 模板变量
 export const TEMPLATE_VARS = [
   { key: "{{commits}}", label: "分组提交记录" },

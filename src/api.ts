@@ -3,6 +3,7 @@ import type {
   AIIdentity,
   AIConfig,
   DetectResult,
+  DirtyCount,
   ProjectCommits,
 } from "./types";
 
@@ -32,6 +33,11 @@ export async function getGitBranches(path: string): Promise<string[]> {
 /** 读取仓库当前 HEAD 分支名（用于前台时同步外部切换的分支） */
 export async function getCurrentBranch(path: string): Promise<string> {
   return invoke<string>("get_git_current_branch", { path });
+}
+
+/** 批量统计仓库未提交文件数（含 untracked） */
+export async function gitDirtyCounts(paths: string[]): Promise<DirtyCount[]> {
+  return invoke<DirtyCount[]>("git_dirty_counts", { paths });
 }
 
 export interface RepoRef {

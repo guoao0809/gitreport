@@ -6,7 +6,7 @@ import { useClipboard } from "@vueuse/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Sparkles, RefreshCw, Copy, ChevronRight, FolderPlus, GitBranch, ChevronDown, Trash2, RefreshCw as ScanIcon, Pencil, UserRound } from "lucide-vue-next";
 import type { DetectResult, Project, ProjectCommits, ReportType } from "../types";
-import { fetchCommits, generateReportStream, detectGitRepos, getGitBranches, getCurrentBranch } from "../api";
+import { fetchCommits, generateReportStream, detectGitRepos, getGitBranches, getCurrentBranch, gitDirtyCounts } from "../api";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useSettingStore } from "../stores/settings";
 import { useProjectStore } from "../stores/projects";
@@ -222,28 +222,45 @@ function onDocClick(e: MouseEvent) {
 onMounted(() => document.addEventListener("click", onDocClick));
 onBeforeUnmount(() => document.removeEventListener("click", onDocClick));
 
-// ===== 窗口回到前台时，同步外部（如 VSCode）切换的分支 =====
+// ===== 窗口回到前台时，同步外部（如 VSCode）切换的分支 + 刷新未提交状态 =====
 let unlistenFocus: (() => void) | undefined;
+/** 项目路径 → 未提交文件数（含 untracked） */
+const dirtyMap = ref<Record<string, number>>({});
+
+async function refreshDirty() {
+  if (projects.value.length === 0) return;
+  try {
+    const list = await gitDirtyCounts(projects.value.map((p) => p.path));
+    dirtyMap.value = Object.fromEntries(list.map((d) => [d.path, d.dirty]));
+  } catch {
+    /* 刷新失败静默忽略 */
+  }
+}
+
 async function syncBranchesFromExternal() {
   if (projects.value.length === 0) return;
   let changed = false;
-  await Promise.all(
-    projects.value.map(async (p) => {
-      try {
-        const branch = await getCurrentBranch(p.path);
-        if (branch && branch !== p.branch) {
-          projectStore.updateBranch(p.id, branch);
-          changed = true;
+  await Promise.all([
+    Promise.all(
+      projects.value.map(async (p) => {
+        try {
+          const branch = await getCurrentBranch(p.path);
+          if (branch && branch !== p.branch) {
+            projectStore.updateBranch(p.id, branch);
+            changed = true;
+          }
+        } catch {
+          /* 仓库不可访问则忽略 */
         }
-      } catch {
-        /* 仓库不可访问则忽略 */
-      }
-    }),
-  );
+      }),
+    ),
+    refreshDirty(),
+  ]);
   // 有勾选项目且分支变化时刷新提交预览
   if (changed && selected.value.size > 0) autoLoadPreview();
 }
 onMounted(() => {
+  refreshDirty();
   getCurrentWindow()
     .onFocusChanged(({ payload }) => {
       if (payload) syncBranchesFromExternal();
@@ -256,9 +273,12 @@ onBeforeUnmount(() => {
 });
 
 function removeProject(id: string) {
-  projectStore.removeProject(id);
-  selected.value.delete(id);
-  showToast("已移除项目", "success");
+  const p = projects.value.find((x) => x.id === id);
+  if (window.confirm(`确定移除项目「${p?.alias?.trim() || p?.name || id}」吗？`)) {
+    projectStore.removeProject(id);
+    selected.value.delete(id);
+    showToast("已移除项目", "success");
+  }
 }
 
 // ===== 提交预览（勾选项目或日期变化时自动加载）=====
@@ -366,6 +386,16 @@ const canGenerate = computed(() => {
   return projectPreviews.value.length > 0;
 });
 
+// ===== 生成时未提交确认弹窗 =====
+/** 非空 = 弹窗展示中的「有未提交文件的项目」列表 */
+const pendingDirtyList = ref<{ p: Project; dirty: number }[]>([]);
+
+function confirmDirtyDialog(go: boolean) {
+  const useReports = reportType.value === "monthly" && monthlyMode.value === "reports";
+  pendingDirtyList.value = [];
+  if (go) doGenerate(useReports);
+}
+
 async function generate() {
   if (generating.value) return;
   const ai = settingStore.ai;
@@ -387,7 +417,26 @@ async function generate() {
     showToast("请先选择项目", "error");
     return;
   }
+
+  // 勾选项目有未提交文件时弹窗确认（生成前实时查一次，保证准确）
+  if (!useReports) {
+    await refreshDirty();
+    const dirtyList = chosen
+      .map((p) => ({ p, dirty: dirtyMap.value[p.path] ?? 0 }))
+      .filter((d) => d.dirty > 0);
+    if (dirtyList.length > 0) {
+      pendingDirtyList.value = dirtyList;
+      return; // 等待用户选择：忽略并继续 / 取消
+    }
+  }
+  await doGenerate(useReports);
+}
+
+/** 弹窗中「忽略并继续」后真正执行生成 */
+async function doGenerate(useReports: boolean) {
+  const ai = settingStore.ai!;
   const authors = filterAuthors.value;
+  const chosen = projects.value.filter((p) => selected.value.has(p.id));
 
   generating.value = true;
   stage.value = useReports ? "正在汇总历史报告…" : "正在统计提交…";
@@ -659,13 +708,20 @@ function buildUserTextFromReports(records: { type: ReportType; dateRange: string
               <div class="truncate text-xs text-muted" :title="p.path">{{ p.path }}</div>
             </div>
             <span class="shrink-0 text-xs text-muted">{{ fmtDate(p.lastCommitAt) }}</span>
-            <button
-              class="shrink-0 rounded-lg p-1 text-muted hover:bg-red-50 hover:text-red-500"
-              title="移除项目"
-              @click="removeProject(p.id)"
-            >
-              <Trash2 :size="14" />
-            </button>
+            <div class="flex shrink-0 flex-col items-end gap-0.5">
+              <button
+                class="rounded-lg p-1 text-muted hover:bg-red-50 hover:text-red-500"
+                title="移除项目"
+                @click="removeProject(p.id)"
+              >
+                <Trash2 :size="14" />
+              </button>
+              <span
+                v-if="!p.missing && (dirtyMap[p.path] ?? 0) > 0"
+                class="text-xs leading-none text-orange-500"
+                :title="`${dirtyMap[p.path]} 个文件未提交（含未跟踪）`"
+              >未提交 {{ dirtyMap[p.path] }}</span>
+            </div>
           </div>
           <div v-if="projects.length === 0" class="py-10 text-center text-sm text-muted">
             暂无项目，点击右上角「导入项目」添加
@@ -780,6 +836,45 @@ function buildUserTextFromReports(records: { type: ReportType; dateRange: string
         <Sparkles :size="15" />
         {{ generating ? stage : "生成" }}
       </button>
+    </div>
+
+    <!-- 未提交文件确认弹窗 -->
+    <div
+      v-if="pendingDirtyList.length > 0"
+      class="fixed inset-0 z-40 flex items-center justify-center bg-black/40"
+      @click.self="confirmDirtyDialog(false)"
+    >
+      <div class="w-105 rounded-xl bg-panel shadow-2xl">
+        <div class="border-b border-border px-5 py-3.5 text-sm font-medium text-title">
+          以下项目有文件未提交
+        </div>
+        <div class="max-h-60 overflow-y-auto px-5 py-3">
+          <div
+            v-for="d in pendingDirtyList"
+            :key="d.p.id"
+            class="flex items-center justify-between gap-3 py-1 text-sm"
+          >
+            <span class="min-w-0 truncate text-text" :title="d.p.path">
+              {{ displayName(d.p.id, d.p.name) }}
+            </span>
+            <span class="shrink-0 text-xs text-orange-500">{{ d.dirty }} 个文件未提交</span>
+          </div>
+        </div>
+        <div class="flex justify-end gap-2 border-t border-border px-5 py-3">
+          <button
+            class="rounded-lg border border-border px-4 py-1.5 text-sm text-text hover:border-primary hover:text-primary"
+            @click="confirmDirtyDialog(false)"
+          >
+            取消
+          </button>
+          <button
+            class="rounded-lg bg-primary px-4 py-1.5 text-sm text-white hover:opacity-90"
+            @click="confirmDirtyDialog(true)"
+          >
+            忽略并继续生成
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- 候选仓库弹窗 -->

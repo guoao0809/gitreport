@@ -74,6 +74,14 @@ pub struct RepoRef {
     pub branch: String,
 }
 
+/// git_dirty_counts 返回项：仓库路径 + 未提交文件数（含 untracked）
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirtyCount {
+    pub path: String,
+    pub dirty: usize,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GeneratePayload {
@@ -237,6 +245,23 @@ pub fn get_git_branches(path: String) -> Result<Vec<String>, String> {
 pub fn get_git_current_branch(path: String) -> Result<String, String> {
     let b = git_output(&["-C", &path, "rev-parse", "--abbrev-ref", "HEAD"])?;
     Ok(b.trim().to_string())
+}
+
+// ===== command：统计未提交文件数 =====
+
+/// 批量统计仓库未提交文件数（`git status --porcelain` 行数，含 untracked）。
+/// 单个仓库失败（如路径不存在）记为 0，不中断整体。
+#[tauri::command]
+pub fn git_dirty_counts(paths: Vec<String>) -> Vec<DirtyCount> {
+    paths
+        .into_iter()
+        .map(|path| {
+            let dirty = git_output(&["-C", &path, "status", "--porcelain"])
+                .map(|s| s.lines().filter(|l| !l.trim().is_empty()).count())
+                .unwrap_or(0);
+            DirtyCount { path, dirty }
+        })
+        .collect()
 }
 
 // ===== command：拉取提交记录 =====

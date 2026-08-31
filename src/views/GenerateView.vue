@@ -6,7 +6,8 @@ import { useClipboard } from "@vueuse/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Sparkles, RefreshCw, Copy, ChevronRight, FolderPlus, GitBranch, ChevronDown, Trash2, RefreshCw as ScanIcon, Pencil, UserRound } from "lucide-vue-next";
 import type { DetectResult, Project, ProjectCommits, ReportType } from "../types";
-import { fetchCommits, generateReportStream, detectGitRepos, getGitBranches } from "../api";
+import { fetchCommits, generateReportStream, detectGitRepos, getGitBranches, getCurrentBranch } from "../api";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useSettingStore } from "../stores/settings";
 import { useProjectStore } from "../stores/projects";
 import { useReportStore } from "../stores/reports";
@@ -207,6 +208,8 @@ async function toggleBranches(id: string, path: string) {
 function changeBranch(id: string, branch: string) {
   projectStore.updateBranch(id, branch);
   branchOpenFor.value = null;
+  // 该项目已被勾选时，切分支后刷新提交预览
+  if (selected.value.has(id)) autoLoadPreview();
   showToast("已切换分支", "success");
 }
 
@@ -218,6 +221,39 @@ function onDocClick(e: MouseEvent) {
 }
 onMounted(() => document.addEventListener("click", onDocClick));
 onBeforeUnmount(() => document.removeEventListener("click", onDocClick));
+
+// ===== 窗口回到前台时，同步外部（如 VSCode）切换的分支 =====
+let unlistenFocus: (() => void) | undefined;
+async function syncBranchesFromExternal() {
+  if (projects.value.length === 0) return;
+  let changed = false;
+  await Promise.all(
+    projects.value.map(async (p) => {
+      try {
+        const branch = await getCurrentBranch(p.path);
+        if (branch && branch !== p.branch) {
+          projectStore.updateBranch(p.id, branch);
+          changed = true;
+        }
+      } catch {
+        /* 仓库不可访问则忽略 */
+      }
+    }),
+  );
+  // 有勾选项目且分支变化时刷新提交预览
+  if (changed && selected.value.size > 0) autoLoadPreview();
+}
+onMounted(() => {
+  getCurrentWindow()
+    .onFocusChanged(({ payload }) => {
+      if (payload) syncBranchesFromExternal();
+    })
+    .then((un) => (unlistenFocus = un));
+});
+onBeforeUnmount(() => {
+  document.removeEventListener("click", onDocClick);
+  unlistenFocus?.();
+});
 
 function removeProject(id: string) {
   projectStore.removeProject(id);

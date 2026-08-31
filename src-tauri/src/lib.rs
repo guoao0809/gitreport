@@ -25,6 +25,7 @@ pub fn run() {
             git::detect_git_repos,
             git::get_git_identity,
             git::get_git_branches,
+            git::get_git_current_branch,
             git::fetch_commits,
             ai::generate_report,
             ai::generate_report_stream,

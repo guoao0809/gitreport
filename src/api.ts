@@ -29,6 +29,11 @@ export async function getGitBranches(path: string): Promise<string[]> {
   return invoke<string[]>("get_git_branches", { path });
 }
 
+/** 读取仓库当前 HEAD 分支名（用于前台时同步外部切换的分支） */
+export async function getCurrentBranch(path: string): Promise<string> {
+  return invoke<string>("get_git_current_branch", { path });
+}
+
 export interface RepoRef {
   path: string;
   branch: string; // 空串 = 当前 HEAD

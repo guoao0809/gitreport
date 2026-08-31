@@ -4,6 +4,10 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+    tags: ['v*']
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -36,21 +40,13 @@ jobs:
       - name: Install deps
         run: pnpm install --frozen-lockfile
 
-      - name: Build
+      - name: Build and release
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload .dmg
-        uses: actions/upload-artifact@v4
         with:
-          name: GitReport-macos-dmg
-          path: src-tauri/target/release/bundle/dmg/*.dmg
-          if-no-files-found: error
-
-      - name: Upload .app
-        uses: actions/upload-artifact@v4
-        with:
-          name: GitReport-macos-app
-          path: src-tauri/target/release/bundle/macos/*.app
-          if-no-files-found: warn
+          tagName: ${{ github.ref_name }}
+          releaseName: GitReport v${{ github.ref_name }}
+          releaseBody: "自动构建发布"
+          releaseDraft: false
+          prerelease: false

@@ -230,6 +230,15 @@ pub fn get_git_branches(path: String) -> Result<Vec<String>, String> {
     Ok(branches)
 }
 
+// ===== command：读取当前 HEAD 分支 =====
+
+/// 读取仓库当前 HEAD 分支名（用于前台时同步外部切换的分支）
+#[tauri::command]
+pub fn get_git_current_branch(path: String) -> Result<String, String> {
+    let b = git_output(&["-C", &path, "rev-parse", "--abbrev-ref", "HEAD"])?;
+    Ok(b.trim().to_string())
+}
+
 // ===== command：拉取提交记录 =====
 
 #[tauri::command]

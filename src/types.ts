@@ -4,6 +4,9 @@ export type ReportType = "daily" | "weekly" | "monthly";
 
 export type AIProtocol = "openai" | "anthropic";
 
+/** 设置页二级导航区块 */
+export type SettingsSection = "ai" | "identities" | "templates";
+
 export interface AIIdentity {
   name: string;
   email: string;

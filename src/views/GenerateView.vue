@@ -4,7 +4,7 @@ import MarkdownIt from "markdown-it";
 import DOMPurify from "dompurify";
 import { useClipboard } from "@vueuse/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { Sparkles, RefreshCw, Copy, ChevronRight, FolderPlus, GitBranch, ChevronDown, Trash2, RefreshCw as ScanIcon, Pencil } from "lucide-vue-next";
+import { Sparkles, RefreshCw, Copy, ChevronRight, FolderPlus, GitBranch, ChevronDown, Trash2, RefreshCw as ScanIcon, Pencil, UserRound } from "lucide-vue-next";
 import type { DetectResult, Project, ProjectCommits, ReportType } from "../types";
 import { fetchCommits, generateReportStream, detectGitRepos, getGitBranches } from "../api";
 import { useSettingStore } from "../stores/settings";
@@ -18,11 +18,14 @@ const settingStore = useSettingStore();
 const projectStore = useProjectStore();
 const reportStore = useReportStore();
 
-// 当前用于统计的身份（未选中时为 null，表示不过滤/全部）
+// 当前用于统计的身份（未选中时为 null）
 const activeIdentity = computed(() => {
   const idx = settingStore.activeIdentityIndex;
   return idx >= 0 && idx < settingStore.identities.length ? settingStore.identities[idx] : null;
 });
+/** 是否已配置 git 身份（身份列表非空即视为已配置） */
+const hasIdentity = computed(() => settingStore.identities.length > 0);
+// 必须有 git 身份才能筛选提交：无身份 → 空数组（不展示任何提交），否则按所选身份过滤
 const filterAuthors = computed(() => (activeIdentity.value ? [activeIdentity.value] : []));
 
 /** 顶部身份下拉框：value 为身份下标字符串，切换后自动刷新提交预览 */
@@ -230,7 +233,7 @@ async function autoLoadPreview() {
   const repos = projects.value
     .filter((p) => selected.value.has(p.id))
     .map((p) => ({ path: p.path, branch: p.branch }));
-  if (repos.length === 0) {
+  if (repos.length === 0 || !hasIdentity.value) {
     previews.value = [];
     return;
   }
@@ -309,8 +312,9 @@ const useReportsMode = computed(
   () => reportType.value === "monthly" && monthlyMode.value === "reports",
 );
 
-/** 生成按钮可用性：普通模式需有勾选项目且预览到提交；reports 模式需日期范围内有历史报告 */
+/** 生成按钮可用性：key 就绪 + 普通模式需有身份、勾选项目且预览到提交；reports 模式需日期范围内有历史报告 */
 const canGenerate = computed(() => {
+  if (!settingStore.keyReady) return false;
   if (generating.value) return false;
   if (useReportsMode.value) {
     return reportStore.reports.some(
@@ -320,6 +324,7 @@ const canGenerate = computed(() => {
         r.from <= to.value,
     );
   }
+  if (!hasIdentity.value) return false;
   const chosen = projects.value.filter((p) => selected.value.has(p.id));
   if (chosen.length === 0) return false;
   return projectPreviews.value.length > 0;
@@ -335,6 +340,11 @@ async function generate() {
 
   // 月报的「按日报/周报」模式：从历史报告拼装，无需选项目/拉 git
   const useReports = reportType.value === "monthly" && monthlyMode.value === "reports";
+
+  if (!useReports && !hasIdentity.value) {
+    showToast("请先到「设置 → Git 身份」配置提交人身份", "error");
+    return;
+  }
 
   const chosen = projects.value.filter((p) => selected.value.has(p.id));
   if (!useReports && chosen.length === 0) {
@@ -503,6 +513,15 @@ function buildUserTextFromReports(records: { type: ReportType; dateRange: string
           </SelectContent>
         </SelectPortal>
       </SelectRoot>
+      <!-- 未配置 git 身份：跳转到设置页配置 -->
+      <button
+        v-else
+        class="flex items-center gap-1.5 rounded-lg border border-dashed border-border bg-panel px-3 py-1.5 text-sm text-muted hover:border-primary hover:text-primary"
+        @click="settingStore.openSettingsSection('identities')"
+      >
+        <UserRound :size="14" />
+        设置 git 身份
+      </button>
       <button
         class="flex items-center gap-1.5 rounded-lg border border-border bg-panel px-3 py-1.5 text-sm text-text hover:border-primary hover:text-primary disabled:opacity-50"
         :disabled="scanning"
@@ -629,7 +648,8 @@ function buildUserTextFromReports(records: { type: ReportType; dateRange: string
               v-if="projectPreviews.length === 0 && !previewLoading"
               class="py-3 text-center text-xs text-muted"
             >
-              勾选项目后自动显示提交记录
+              <template v-if="!hasIdentity">请先到「设置 → Git 身份」配置提交人身份</template>
+              <template v-else>勾选项目后自动显示提交记录</template>
             </div>
             <div v-for="pc in projectPreviews" :key="pc.projectId" class="mb-2">
               <div class="sticky top-0 mb-1 bg-panel py-0.5 text-xs font-medium text-title">

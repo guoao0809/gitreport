@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, onMounted, watch } from "vue";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import TitleBar from "./components/TitleBar.vue";
 import SideNav, { type ViewKey } from "./components/SideNav.vue";
@@ -21,6 +21,15 @@ const currentView = ref<ViewKey>("generate");
 function setView(key: ViewKey) {
   currentView.value = key;
 }
+
+// 跨视图跳转：GenerateView 请求打开设置页某区块时切换到设置视图
+const settingStore = useSettingStore();
+watch(
+  () => settingStore.openSection,
+  (s) => {
+    if (s) currentView.value = "settings";
+  },
+);
 
 // ===== git 环境检测 =====
 const gitReady = ref(true);

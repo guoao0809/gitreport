@@ -5,6 +5,20 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::process::Command;
 
+/// 创建 git 子进程命令。Windows 下加 CREATE_NO_WINDOW，避免每次执行 git 弹一个 cmd 窗口。
+#[cfg(windows)]
+pub(crate) fn git_cmd() -> Command {
+    use std::os::windows::process::CommandExt;
+    let mut cmd = Command::new("git");
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    cmd
+}
+
+#[cfg(not(windows))]
+pub(crate) fn git_cmd() -> Command {
+    Command::new("git")
+}
+
 // ===== 与前端 src/types.ts 对齐的共享类型（serde camelCase）=====
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -73,7 +87,7 @@ pub struct GeneratePayload {
 /// 检测系统是否安装了可用的 git
 #[tauri::command]
 pub fn check_git() -> bool {
-    std::process::Command::new("git")
+    git_cmd()
         .arg("--version")
         .output()
         .map(|o| o.status.success())
@@ -82,7 +96,7 @@ pub fn check_git() -> bool {
 
 /// 运行 git 命令，返回 stdout 字符串（失败返回中文错误）
 fn git_output(args: &[&str]) -> Result<String, String> {
-    let out = Command::new("git")
+    let out = git_cmd()
         .args(args)
         .output()
         .map_err(|e| format!("无法启动 git：{e}"))?;

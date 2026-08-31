@@ -36,7 +36,7 @@ pub fn run() {
         ])
         .setup(|app| {
             // 检测 git 是否可用（失败仅记日志，不阻断启动）
-            match std::process::Command::new("git").arg("--version").output() {
+            match git::git_cmd().arg("--version").output() {
                 Ok(out) if out.status.success() => {
                     log::info!("git 可用：{}", String::from_utf8_lossy(&out.stdout).trim());
                 }

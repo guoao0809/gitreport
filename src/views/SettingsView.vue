@@ -1,26 +1,35 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, watch } from "vue";
 import { Eye, EyeOff, Plus, Trash2, RotateCcw, Bot, UserRound, FileCode2, Download, RefreshCw, ChevronDown } from "lucide-vue-next";
-import type { AIConfig, AIProtocol, ReportType } from "../types";
+import type { AIConfig, AIProtocol, ReportType, SettingsSection } from "../types";
 import { TEMPLATE_VARS } from "../types";
 import { testAiConnection, getGitIdentity, listModels } from "../api";
 import { useSettingStore } from "../stores/settings";
-import { useProjectStore } from "../stores/projects";
 import { showToast } from "../components/toast";
 import Tabs from "../components/Tabs.vue";
 import { ComboboxRoot, ComboboxAnchor, ComboboxInput, ComboboxTrigger, ComboboxPortal, ComboboxContent, ComboboxViewport, ComboboxItem, ComboboxEmpty } from "reka-ui";
 
 const settingStore = useSettingStore();
-const projectStore = useProjectStore();
 
-type SectionKey = "ai" | "identities" | "templates";
-const section = ref<SectionKey>("ai");
+type SectionKey = SettingsSection;
+const section = ref<SettingsSection>("ai");
 
 const sections: { key: SectionKey; label: string; icon: typeof Bot }[] = [
   { key: "ai", label: "AI 模型", icon: Bot },
   { key: "identities", label: "Git 身份", icon: UserRound },
   { key: "templates", label: "提示词模板", icon: FileCode2 },
 ];
+
+// 跨视图跳转定位：GenerateView 请求打开某区块时，切到该区块并清空请求
+watch(
+  () => settingStore.openSection,
+  (s) => {
+    if (s) {
+      section.value = s;
+      settingStore.openSection = "";
+    }
+  },
+);
 
 // ===== AI 模型 =====
 const form = reactive<AIConfig>({
@@ -144,23 +153,25 @@ watch(section, (newVal, oldVal) => {
   if (cleaned.length === 0) identities.push({ name: "", email: "" });
 });
 
-/** 从 git config 读取当前身份（用第一个已导入项目，读 local/global 配置） */
+/** 从本机 git config 读取当前身份（--global / --system，无需导入项目） */
 const readingIdentity = ref(false);
 async function readFromGitConfig() {
-  const p = projectStore.projects[0];
-  if (!p) {
-    showToast("请先在「项目」页导入至少一个项目", "error");
-    return;
-  }
   readingIdentity.value = true;
   try {
-    const ident = await getGitIdentity(p.path);
-    // 若列表中已存在完全相同的身份则复用，否则追加
-    const exists = identities.some((i) => i.name === ident.name && i.email === ident.email);
-    if (!exists) {
-      identities.push({ ...ident });
+    // 传空 path：不依赖未导入的项目，直接读本机 git config
+    const ident = await getGitIdentity("");
+    // 已存在完全相同 → 复用；否则优先填充空白项，再否则追加
+    let idx = identities.findIndex((i) => i.name === ident.name && i.email === ident.email);
+    if (idx < 0) {
+      const blank = identities.findIndex((i) => !i.name.trim() && !i.email.trim());
+      if (blank >= 0) {
+        identities[blank] = { ...ident };
+        idx = blank;
+      } else {
+        identities.push({ ...ident });
+        idx = identities.length - 1;
+      }
     }
-    const idx = identities.findIndex((i) => i.name === ident.name && i.email === ident.email);
     settingStore.saveIdentities(identities.map((i) => ({ ...i })));
     settingStore.setActiveIdentity(idx);
     showToast(`已读取 git 身份：${ident.name} <${ident.email}>`, "success");

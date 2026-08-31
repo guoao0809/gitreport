@@ -119,6 +119,19 @@ pnpm tauri build
 
 > 产物位于 `src-tauri/target/release/bundle/`，图标为 240×240 自绘 Logo。
 
+### CI 自动构建与发布（GitHub Actions）
+
+项目内置 `build-windows.yml` 与 `build-macos.yml`：每次 push 到 `main` 或手动 `workflow_dispatch` 触发构建（并可缓存 cargo），当 push **以 `v` 开头的 tag** 时，会额外把对应平台的安装包自动上传为一个 **GitHub Release**（Windows NSIS `.exe` + macOS `.dmg`）。
+
+发布一个版本：
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+> 触发后会在 Actions 中看到一个 `GitReport v1.0.0` 的 Release，win / mac 两个平台的安装包自动合并挂载；Release 由 `tauri-apps/tauri-action` 创建，需在仓库设置中授权 `contents: write`（workflow 内已声明）。
+
 ---
 
 ## 快速使用

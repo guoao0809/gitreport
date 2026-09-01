@@ -131,6 +131,8 @@ git push origin v1.0.0
 ```
 
 > 触发后会在 Actions 中看到一个 `GitReport v1.0.0` 的 Release，win / mac 两个平台的安装包自动合并挂载；Release 由 `tauri-apps/tauri-action` 创建，需在仓库设置中授权 `contents: write`（workflow 内已声明）。
+>
+> macOS 提供两种架构的 `.dmg`：**aarch64**（Apple Silicon / M 系列）与 **x86_64**（Intel），请按机型选择下载。
 
 ---
 

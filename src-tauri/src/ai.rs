@@ -147,14 +147,16 @@ fn post_json(url: &str, config: &AIConfig, body: &Value, is_anthropic: bool) -> 
     Ok(text)
 }
 
-/// 从响应 JSON 提取文本：OpenAI 取 choices[0].message.content；Anthropic 取 content[0].text
+/// 从响应 JSON 提取文本：OpenAI 取 choices[0].message.content；Anthropic 取 content 数组中首个 text 块。
+/// 兼容模型先返回 thinking 块（content[0] 为 {type:"thinking",...}）的情况——不能硬编码 content[0].text。
 fn extract_text(body: &str, is_anthropic: bool) -> Result<String, String> {
     let v: Value = serde_json::from_str(body).map_err(|e| format!("响应不是有效 JSON：{e}"))?;
     let text = if is_anthropic {
-        v["content"][0]["text"]
-            .as_str()
+        v["content"]
+            .as_array()
+            .and_then(|arr| arr.iter().find_map(|item| item["text"].as_str()))
             .map(|s| s.to_string())
-            .ok_or_else(|| format!("响应中未找到文本（content[0].text）：{}", &body.chars().take(200).collect::<String>()))?
+            .ok_or_else(|| format!("响应中未找到文本（content[].text）：{}", &body.chars().take(200).collect::<String>()))?
     } else {
         v["choices"][0]["message"]["content"]
             .as_str()
@@ -484,6 +486,15 @@ mod tests {
         assert_eq!(extract_text(openai, false).unwrap(), "hello");
         assert_eq!(extract_text(anthropic, true).unwrap(), "hi");
         assert!(extract_text("{}", false).is_err());
+    }
+
+    #[test]
+    fn extract_text_anthropic_with_thinking_first() {
+        // 模型先返回 thinking 块（content[0].text 不存在，会误报未找到文本）
+        let body = r#"{"content":[{"type":"thinking","thinking":"We","signature":"s"},{"type":"text","text":"hi"}]}"#;
+        assert_eq!(extract_text(body, true).unwrap(), "hi");
+        // 纯 thinking 无 text 块 → 仍应报错
+        assert!(extract_text(r#"{"content":[{"type":"thinking","thinking":"xx"}]}"#, true).is_err());
     }
 
     #[test]
